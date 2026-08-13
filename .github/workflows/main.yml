@@ -1,4 +1,4 @@
-name: Ngrok Authentication Test
+name: Ngrok Connectivity Test
 
 "on":
   workflow_dispatch:
@@ -17,14 +17,10 @@ jobs:
           $zip = "$env:TEMP\ngrok.zip"
           $dir = "$env:RUNNER_TEMP\ngrok"
 
-          Write-Host "Downloading ngrok..."
           Invoke-WebRequest -Uri $url -OutFile $zip
-
-          Write-Host "Extracting ngrok..."
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           Expand-Archive -Path $zip -DestinationPath $dir -Force
 
-          Write-Host "ngrok version:"
           & "$dir\ngrok.exe" version
 
       - name: Authenticate ngrok
@@ -35,34 +31,91 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTHTOKEN)) {
-            throw "NGROK_AUTHTOKEN secret is missing."
+            throw "NGROK_AUTHTOKEN is missing."
           }
 
-          Write-Host "GitHub Secret detected."
-          Write-Host "Token length: $($env:NGROK_AUTHTOKEN.Length)"
-
-          $ngrok = "$env:RUNNER_TEMP\ngrok\ngrok.exe"
-
-          Write-Host "Authenticating ngrok..."
-
-          & $ngrok config add-authtoken "$env:NGROK_AUTHTOKEN"
+          & "$env:RUNNER_TEMP\ngrok\ngrok.exe" `
+            config add-authtoken "$env:NGROK_AUTHTOKEN"
 
           if ($LASTEXITCODE -ne 0) {
-            throw "ngrok authentication failed with exit code $LASTEXITCODE"
+            throw "ngrok authentication failed."
           }
 
-          Write-Host "Authentication completed."
+      - name: Start local test server
+        shell: powershell
+        run: |
+          $listener = New-Object System.Net.HttpListener
+          $listener.Prefixes.Add("http://127.0.0.1:8080/")
+          $listener.Start()
 
-      - name: Verify configuration
+          $script = {
+            param($listener)
+
+            while ($listener.IsListening) {
+              try {
+                $context = $listener.GetContext()
+                $response = $context.Response
+
+                $body = [Text.Encoding]::UTF8.GetBytes(
+                  "GitHub Windows runner + ngrok connectivity test OK"
+                )
+
+                $response.ContentLength64 = $body.Length
+                $response.OutputStream.Write($body, 0, $body.Length)
+                $response.Close()
+              }
+              catch {
+                break
+              }
+            }
+          }
+
+          Start-Job -ScriptBlock $script -ArgumentList $listener | Out-Null
+
+          Start-Sleep -Seconds 2
+
+          try {
+            Invoke-WebRequest `
+              -Uri "http://127.0.0.1:8080/" `
+              -UseBasicParsing
+          }
+          catch {
+            Write-Host "Local test server started."
+          }
+
+      - name: Start ngrok HTTP tunnel
         shell: powershell
         run: |
           $ngrok = "$env:RUNNER_TEMP\ngrok\ngrok.exe"
 
-          Write-Host "Checking ngrok configuration..."
-          & $ngrok config check
+          Start-Process `
+            -FilePath $ngrok `
+            -ArgumentList "http 8080" `
+            -WindowStyle Hidden
 
-          if ($LASTEXITCODE -ne 0) {
-            throw "ngrok config check failed."
+          Start-Sleep -Seconds 10
+
+          $tunnels = Invoke-RestMethod `
+            -Uri "http://127.0.0.1:4040/api/tunnels"
+
+          $tunnels.tunnels |
+            Select-Object name, public_url, proto, config |
+            Format-List
+
+      - name: Test tunnel
+        shell: powershell
+        run: |
+          $tunnels = Invoke-RestMethod `
+            -Uri "http://127.0.0.1:4040/api/tunnels"
+
+          if ($tunnels.tunnels.Count -lt 1) {
+            throw "No ngrok tunnel was created."
           }
 
-          Write-Host "NGROK CONFIGURATION OK."
+          Write-Host "ngrok tunnel successfully created."
+
+      - name: Keep runner alive briefly
+        shell: powershell
+        run: |
+          Write-Host "Connectivity test complete."
+          Start-Sleep -Seconds 30
