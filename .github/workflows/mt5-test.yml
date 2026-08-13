@@ -1,0 +1,33 @@
+name: MT5 Test
+
+"on":
+  workflow_dispatch:
+
+jobs:
+  mt5-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Windows information
+        shell: powershell
+        run: |
+          Write-Host "Windows runner ready"
+          Get-CimInstance Win32_OperatingSystem |
+            Select-Object Caption, Version, OSArchitecture
+
+      - name: Check MT5 installation
+        shell: powershell
+        run: |
+          $paths = @(
+            "$env:ProgramFiles\MetaTrader 5",
+            "$env:ProgramFiles\MetaTrader 5\terminal64.exe",
+            "$env:LOCALAPPDATA\Programs\MetaTrader 5\terminal64.exe"
+          )
+
+          foreach ($path in $paths) {
+            if (Test-Path $path) {
+              Write-Host "Found: $path"
+            }
+          }
+
+          Write-Host "MT5 installation check completed."
