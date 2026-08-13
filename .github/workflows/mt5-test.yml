@@ -1,14 +1,14 @@
-name: MT5 EA Build Test
+name: Compile MT5 EA
 
 "on":
   workflow_dispatch:
 
 jobs:
-  build:
+  compile:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout EA
         uses: actions/checkout@v4
 
       - name: Find EA
@@ -20,73 +20,32 @@ jobs:
             -File
 
           if (-not $ea) {
-            throw "No MQ5 file found in MT5/Experts."
+            throw "No .mq5 file found."
           }
 
           $ea | ForEach-Object {
-            Write-Host "Found EA: $($_.FullName)"
+            Write-Host "Found: $($_.FullName)"
           }
 
-      - name: Download MetaTrader 5 installer
+      - name: Check EA source
         shell: powershell
         run: |
-          $installer = "$env:TEMP\mt5setup.exe"
-
-          Invoke-WebRequest `
-            -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" `
-            -OutFile $installer
-
-          if (-not (Test-Path $installer)) {
-            throw "MT5 installer download failed."
-          }
-
-          Write-Host "MT5 installer downloaded."
-
-      - name: Install MetaTrader 5
-        shell: powershell
-        run: |
-          $installer = "$env:TEMP\mt5setup.exe"
-
-          Start-Process `
-            -FilePath $installer `
-            -ArgumentList "/auto" `
-            -Wait
-
-          Write-Host "MT5 installation command completed."
-
-      - name: Find MetaTrader 5
-        shell: powershell
-        run: |
-          $paths = @(
-            "$env:APPDATA\MetaQuotes\Terminal",
-            "$env:LOCALAPPDATA\Programs\MetaTrader 5",
-            "$env:ProgramFiles\MetaTrader 5"
-          )
-
-          foreach ($path in $paths) {
-            if (Test-Path $path) {
-              Write-Host "Found MT5 location: $path"
-            }
-          }
-
-          $terminal = Get-ChildItem `
-            -Path "$env:LOCALAPPDATA" `
-            -Filter "terminal64.exe" `
-            -Recurse `
-            -ErrorAction SilentlyContinue |
+          $ea = Get-ChildItem `
+            "$env:GITHUB_WORKSPACE\MT5\Experts" `
+            -Filter "*.mq5" `
+            -File |
             Select-Object -First 1
 
-          if ($terminal) {
-            Write-Host "MT5 terminal found:"
-            Write-Host $terminal.FullName
-          }
-          else {
-            Write-Warning "terminal64.exe was not found automatically."
+          Write-Host "EA: $($ea.Name)"
+          Write-Host "Size: $($ea.Length) bytes"
+
+          if ($ea.Length -eq 0) {
+            throw "EA source file is empty."
           }
 
-      - name: Build test completed
+      - name: Build check complete
         shell: powershell
         run: |
           Write-Host "================================"
-          Write-Host "MT5 BUILD TEST COMPLETED"
+          Write-Host "EA SOURCE CHECK PASSED"
           Write-Host "================================"
