@@ -1,37 +1,39 @@
-name: Windows Test
+name: Ngrok Test
 
-on:
+"on":
   workflow_dispatch:
 
 jobs:
-  windows-test:
+  ngrok-test:
     runs-on: windows-latest
 
     steps:
-      - name: Show Windows information
+      - name: Download ngrok
         shell: powershell
         run: |
-          Write-Host "Windows runner started"
-          Write-Host "Computer: $env:COMPUTERNAME"
-          Write-Host "User: $env:USERNAME"
-          Get-CimInstance Win32_OperatingSystem |
-            Select-Object Caption, Version, OSArchitecture
+          $url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+          $zip = "$env:TEMP\ngrok.zip"
+          $dir = "$env:RUNNER_TEMP\ngrok"
 
-      - name: Check RDP service
-        shell: powershell
-        run: |
-          Get-Service -Name TermService
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
 
-      - name: Check network
-        shell: powershell
-        run: |
-          Get-NetIPAddress |
-            Where-Object {
-              $_.AddressFamily -eq "IPv4"
-            } |
-            Select-Object IPAddress, InterfaceAlias
+          & "$dir\ngrok.exe" version
 
-      - name: Finished
+      - name: Authenticate ngrok
+        shell: powershell
+        env:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTHTOKEN)) {
+            throw "NGROK_AUTHTOKEN secret is missing."
+          }
+
+          & "$env:RUNNER_TEMP\ngrok\ngrok.exe" `
+            config add-authtoken $env:NGROK_AUTHTOKEN
+
+      - name: Verify ngrok
         shell: powershell
         run: |
-          Write-Host "Windows runner test completed successfully."
+          & "$env:RUNNER_TEMP\ngrok\ngrok.exe" config check
+          Write-Host "ngrok authentication successful."
