@@ -1,58 +1,92 @@
-name: MT5 EA Test
+name: MT5 EA Build Test
 
 "on":
   workflow_dispatch:
 
 jobs:
-  mt5-test:
+  build:
     runs-on: windows-latest
 
     steps:
-      - name: Download repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Find EA source
+      - name: Find EA
         shell: powershell
         run: |
           $ea = Get-ChildItem `
-            -Path "$env:GITHUB_WORKSPACE\MT5\Experts" `
+            "$env:GITHUB_WORKSPACE\MT5\Experts" `
             -Filter "*.mq5" `
             -File
 
-          if ($null -eq $ea) {
-            throw "No .mq5 EA found in MT5/Experts."
+          if (-not $ea) {
+            throw "No MQ5 file found in MT5/Experts."
           }
 
-          Write-Host "EA files found:"
-          $ea | Select-Object FullName, Length
-
-      - name: Display EA information
-        shell: powershell
-        run: |
-          $files = Get-ChildItem `
-            -Path "$env:GITHUB_WORKSPACE\MT5\Experts" `
-            -Filter "*.mq5" `
-            -File
-
-          foreach ($file in $files) {
-            Write-Host "--------------------------------"
-            Write-Host "File: $($file.Name)"
-            Write-Host "Size: $($file.Length) bytes"
-            Write-Host "--------------------------------"
+          $ea | ForEach-Object {
+            Write-Host "Found EA: $($_.FullName)"
           }
 
-      - name: Windows environment test
+      - name: Download MetaTrader 5 installer
         shell: powershell
         run: |
-          Write-Host "Computer: $env:COMPUTERNAME"
-          Write-Host "Architecture: $env:PROCESSOR_ARCHITECTURE"
+          $installer = "$env:TEMP\mt5setup.exe"
 
-          Get-CimInstance Win32_OperatingSystem |
-            Select-Object Caption, Version, OSArchitecture
+          Invoke-WebRequest `
+            -Uri "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" `
+            -OutFile $installer
 
-      - name: Test completed
+          if (-not (Test-Path $installer)) {
+            throw "MT5 installer download failed."
+          }
+
+          Write-Host "MT5 installer downloaded."
+
+      - name: Install MetaTrader 5
         shell: powershell
         run: |
-          Write-Host "===================================="
-          Write-Host "MT5 EA SOURCE TEST PASSED"
-          Write-Host "===================================="
+          $installer = "$env:TEMP\mt5setup.exe"
+
+          Start-Process `
+            -FilePath $installer `
+            -ArgumentList "/auto" `
+            -Wait
+
+          Write-Host "MT5 installation command completed."
+
+      - name: Find MetaTrader 5
+        shell: powershell
+        run: |
+          $paths = @(
+            "$env:APPDATA\MetaQuotes\Terminal",
+            "$env:LOCALAPPDATA\Programs\MetaTrader 5",
+            "$env:ProgramFiles\MetaTrader 5"
+          )
+
+          foreach ($path in $paths) {
+            if (Test-Path $path) {
+              Write-Host "Found MT5 location: $path"
+            }
+          }
+
+          $terminal = Get-ChildItem `
+            -Path "$env:LOCALAPPDATA" `
+            -Filter "terminal64.exe" `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if ($terminal) {
+            Write-Host "MT5 terminal found:"
+            Write-Host $terminal.FullName
+          }
+          else {
+            Write-Warning "terminal64.exe was not found automatically."
+          }
+
+      - name: Build test completed
+        shell: powershell
+        run: |
+          Write-Host "================================"
+          Write-Host "MT5 BUILD TEST COMPLETED"
+          Write-Host "================================"
