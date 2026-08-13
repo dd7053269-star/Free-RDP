@@ -1,4 +1,4 @@
-name: MT5 Test
+name: MT5 EA Test
 
 "on":
   workflow_dispatch:
@@ -8,26 +8,51 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Windows information
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Find EA source
         shell: powershell
         run: |
-          Write-Host "Windows runner ready"
+          $ea = Get-ChildItem `
+            -Path "$env:GITHUB_WORKSPACE\MT5\Experts" `
+            -Filter "*.mq5" `
+            -File
+
+          if ($null -eq $ea) {
+            throw "No .mq5 EA found in MT5/Experts."
+          }
+
+          Write-Host "EA files found:"
+          $ea | Select-Object FullName, Length
+
+      - name: Display EA information
+        shell: powershell
+        run: |
+          $files = Get-ChildItem `
+            -Path "$env:GITHUB_WORKSPACE\MT5\Experts" `
+            -Filter "*.mq5" `
+            -File
+
+          foreach ($file in $files) {
+            Write-Host "--------------------------------"
+            Write-Host "File: $($file.Name)"
+            Write-Host "Size: $($file.Length) bytes"
+            Write-Host "--------------------------------"
+          }
+
+      - name: Windows environment test
+        shell: powershell
+        run: |
+          Write-Host "Computer: $env:COMPUTERNAME"
+          Write-Host "Architecture: $env:PROCESSOR_ARCHITECTURE"
+
           Get-CimInstance Win32_OperatingSystem |
             Select-Object Caption, Version, OSArchitecture
 
-      - name: Check MT5 installation
+      - name: Test completed
         shell: powershell
         run: |
-          $paths = @(
-            "$env:ProgramFiles\MetaTrader 5",
-            "$env:ProgramFiles\MetaTrader 5\terminal64.exe",
-            "$env:LOCALAPPDATA\Programs\MetaTrader 5\terminal64.exe"
-          )
-
-          foreach ($path in $paths) {
-            if (Test-Path $path) {
-              Write-Host "Found: $path"
-            }
-          }
-
-          Write-Host "MT5 installation check completed."
+          Write-Host "===================================="
+          Write-Host "MT5 EA SOURCE TEST PASSED"
+          Write-Host "===================================="
