@@ -1,19 +1,17 @@
-```yaml
-name: Windows RDP Test
+name: Windows Test
 
 on:
   workflow_dispatch:
 
 jobs:
-  windows-rdp:
+  windows-test:
     runs-on: windows-latest
-
-    timeout-minutes: 360
 
     steps:
       - name: Show Windows information
         shell: powershell
         run: |
+          Write-Host "Windows runner started"
           Write-Host "Computer: $env:COMPUTERNAME"
           Write-Host "User: $env:USERNAME"
           Get-CimInstance Win32_OperatingSystem |
@@ -22,67 +20,18 @@ jobs:
       - name: Check RDP service
         shell: powershell
         run: |
-          Get-Service TermService
-          Get-NetFirewallRule -DisplayGroup "Remote Desktop" |
-            Select-Object DisplayName, Enabled, Profile
+          Get-Service -Name TermService
 
-      - name: Download ngrok
+      - name: Check network
         shell: powershell
         run: |
-          $url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
-          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\ngrok.zip"
+          Get-NetIPAddress |
+            Where-Object {
+              $_.AddressFamily -eq "IPv4"
+            } |
+            Select-Object IPAddress, InterfaceAlias
 
-          Expand-Archive `
-            -Path "$env:TEMP\ngrok.zip" `
-            -DestinationPath "$env:RUNNER_TEMP\ngrok" `
-            -Force
-
-          & "$env:RUNNER_TEMP\ngrok\ngrok.exe" version
-
-      - name: Configure ngrok
-        shell: powershell
-        env:
-          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTHTOKEN)) {
-            throw "NGROK_AUTHTOKEN GitHub Secret is missing."
-          }
-
-          & "$env:RUNNER_TEMP\ngrok\ngrok.exe" `
-            config add-authtoken $env:NGROK_AUTHTOKEN
-
-      - name: Start RDP tunnel
+      - name: Finished
         shell: powershell
         run: |
-          Write-Host "Starting ngrok TCP tunnel..."
-          Write-Host "Use the ngrok dashboard to inspect the endpoint."
-          
-          Start-Process `
-            -FilePath "$env:RUNNER_TEMP\ngrok\ngrok.exe" `
-            -ArgumentList "tcp 3389" `
-            -WindowStyle Hidden
-
-          Start-Sleep -Seconds 10
-
-          Write-Host "Checking ngrok API..."
-          try {
-            Invoke-RestMethod `
-              -Uri "http://127.0.0.1:4040/api/tunnels" |
-              ConvertTo-Json -Depth 10
-          }
-          catch {
-            Write-Warning "Could not query the local ngrok API."
-            Write-Warning $_
-          }
-
-      - name: Keep runner alive
-        shell: powershell
-        run: |
-          Write-Host "Windows runner is active."
-          Write-Host "This runner is temporary and will disappear when the job ends."
-          
-          while ($true) {
-            Write-Host "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - runner alive"
-            Start-Sleep -Seconds 60
-          }
-```
+          Write-Host "Windows runner test completed successfully."
