@@ -1,4 +1,4 @@
-name: Ngrok Test
+name: Ngrok Authentication Test
 
 "on":
   workflow_dispatch:
@@ -11,13 +11,20 @@ jobs:
       - name: Download ngrok
         shell: powershell
         run: |
+          $ErrorActionPreference = "Stop"
+
           $url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
           $zip = "$env:TEMP\ngrok.zip"
           $dir = "$env:RUNNER_TEMP\ngrok"
 
+          Write-Host "Downloading ngrok..."
           Invoke-WebRequest -Uri $url -OutFile $zip
+
+          Write-Host "Extracting ngrok..."
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
           Expand-Archive -Path $zip -DestinationPath $dir -Force
 
+          Write-Host "ngrok version:"
           & "$dir\ngrok.exe" version
 
       - name: Authenticate ngrok
@@ -25,15 +32,37 @@ jobs:
         env:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
         run: |
+          $ErrorActionPreference = "Stop"
+
           if ([string]::IsNullOrWhiteSpace($env:NGROK_AUTHTOKEN)) {
             throw "NGROK_AUTHTOKEN secret is missing."
           }
 
-          & "$env:RUNNER_TEMP\ngrok\ngrok.exe" `
-            config add-authtoken $env:NGROK_AUTHTOKEN
+          Write-Host "GitHub Secret detected."
+          Write-Host "Token length: $($env:NGROK_AUTHTOKEN.Length)"
 
-      - name: Verify ngrok
+          $ngrok = "$env:RUNNER_TEMP\ngrok\ngrok.exe"
+
+          Write-Host "Authenticating ngrok..."
+
+          & $ngrok config add-authtoken "$env:NGROK_AUTHTOKEN"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "ngrok authentication failed with exit code $LASTEXITCODE"
+          }
+
+          Write-Host "Authentication completed."
+
+      - name: Verify configuration
         shell: powershell
         run: |
-          & "$env:RUNNER_TEMP\ngrok\ngrok.exe" config check
-          Write-Host "ngrok authentication successful."
+          $ngrok = "$env:RUNNER_TEMP\ngrok\ngrok.exe"
+
+          Write-Host "Checking ngrok configuration..."
+          & $ngrok config check
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "ngrok config check failed."
+          }
+
+          Write-Host "NGROK CONFIGURATION OK."
