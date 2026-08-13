@@ -41,51 +41,38 @@ jobs:
             throw "ngrok authentication failed."
           }
 
-      - name: Start local test server
+      - name: Start local web server
         shell: powershell
         run: |
-          $listener = New-Object System.Net.HttpListener
-          $listener.Prefixes.Add("http://127.0.0.1:8080/")
-          $listener.Start()
+          $ErrorActionPreference = "Stop"
 
-          $script = {
-            param($listener)
+          $server = Start-Process `
+            -FilePath "python" `
+            -ArgumentList "-m http.server 8080 --bind 127.0.0.1" `
+            -WindowStyle Hidden `
+            -PassThru
 
-            while ($listener.IsListening) {
-              try {
-                $context = $listener.GetContext()
-                $response = $context.Response
+          Start-Sleep -Seconds 3
 
-                $body = [Text.Encoding]::UTF8.GetBytes(
-                  "GitHub Windows runner + ngrok connectivity test OK"
-                )
+          Write-Host "Testing local server..."
 
-                $response.ContentLength64 = $body.Length
-                $response.OutputStream.Write($body, 0, $body.Length)
-                $response.Close()
-              }
-              catch {
-                break
-              }
-            }
+          $response = Invoke-WebRequest `
+            -Uri "http://127.0.0.1:8080/" `
+            -UseBasicParsing
+
+          Write-Host "Local server HTTP status: $($response.StatusCode)"
+
+          if ($response.StatusCode -ne 200) {
+            throw "Local web server test failed."
           }
 
-          Start-Job -ScriptBlock $script -ArgumentList $listener | Out-Null
+          Write-Host "Local server is working."
 
-          Start-Sleep -Seconds 2
-
-          try {
-            Invoke-WebRequest `
-              -Uri "http://127.0.0.1:8080/" `
-              -UseBasicParsing
-          }
-          catch {
-            Write-Host "Local test server started."
-          }
-
-      - name: Start ngrok HTTP tunnel
+      - name: Start ngrok tunnel
         shell: powershell
         run: |
+          $ErrorActionPreference = "Stop"
+
           $ngrok = "$env:RUNNER_TEMP\ngrok\ngrok.exe"
 
           Start-Process `
@@ -98,24 +85,34 @@ jobs:
           $tunnels = Invoke-RestMethod `
             -Uri "http://127.0.0.1:4040/api/tunnels"
 
-          $tunnels.tunnels |
-            Select-Object name, public_url, proto, config |
-            Format-List
+          if ($tunnels.tunnels.Count -lt 1) {
+            throw "ngrok did not create a tunnel."
+          }
 
-      - name: Test tunnel
+          foreach ($tunnel in $tunnels.tunnels) {
+            Write-Host "ngrok tunnel:"
+            Write-Host "Public URL: $($tunnel.public_url)"
+          }
+
+      - name: Test ngrok tunnel
         shell: powershell
         run: |
           $tunnels = Invoke-RestMethod `
             -Uri "http://127.0.0.1:4040/api/tunnels"
 
-          if ($tunnels.tunnels.Count -lt 1) {
-            throw "No ngrok tunnel was created."
+          $publicUrl = $tunnels.tunnels[0].public_url
+
+          Write-Host "Testing:"
+          Write-Host $publicUrl
+
+          $response = Invoke-WebRequest `
+            -Uri $publicUrl `
+            -UseBasicParsing
+
+          Write-Host "HTTP status: $($response.StatusCode)"
+
+          if ($response.StatusCode -ne 200) {
+            throw "ngrok tunnel test failed."
           }
 
-          Write-Host "ngrok tunnel successfully created."
-
-      - name: Keep runner alive briefly
-        shell: powershell
-        run: |
-          Write-Host "Connectivity test complete."
-          Start-Sleep -Seconds 30
+          Write-Host "NGROK CONNECTIVITY TEST PASSED."
